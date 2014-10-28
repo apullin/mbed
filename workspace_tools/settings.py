@@ -30,7 +30,7 @@ ROOT = abspath(join(dirname(__file__), ".."))
 BUILD_DIR = abspath(join(ROOT, "build"))
 
 # ARM
-armcc = "standalone" # "keil", or "standalone", or "ds-5"
+armcc = "keil" # "keil", or "standalone", or "ds-5"
 
 if armcc == "keil":
     ARM_PATH = "C:/Keil_4_54/ARM"
