@@ -1,12 +1,12 @@
 /*----------------------------------------------------------------------------
  *      RL-ARM - RTX
  *----------------------------------------------------------------------------
- *      Name:    HAL_CM3.C
- *      Purpose: Hardware Abstraction Layer for Cortex-M3
- *      Rev.:    V4.60
+ *      Name:    HAL_CM4.C
+ *      Purpose: Hardware Abstraction Layer for Cortex-M4
+ *      Rev.:    V4.70
  *----------------------------------------------------------------------------
  *
- * Copyright (c) 1999-2009 KEIL, 2009-2012 ARM Germany GmbH
+ * Copyright (c) 1999-2009 KEIL, 2009-2013 ARM Germany GmbH
  * All rights reserved.
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -124,13 +124,20 @@ __asm void SVC_Handler (void) {
         IMPORT  SVC_Table
         IMPORT  rt_stk_check
 
+#ifdef  IFX_XMC4XXX
+        EXPORT  SVC_Handler_Veneer
+SVC_Handler_Veneer
+#endif
+
         MRS     R0,PSP                  ; Read PSP
         LDR     R1,[R0,#24]             ; Read Saved PC from Stack
         LDRB    R1,[R1,#-2]             ; Load SVC Number
         CBNZ    R1,SVC_User
 
         LDM     R0,{R0-R3,R12}          ; Read R0-R3,R12 from stack
+        PUSH    {R4,LR}                 ; Save EXC_RETURN
         BLX     R12                     ; Call SVC Function
+        POP     {R4,LR}                 ; Restore EXC_RETURN
 
         MRS     R12,PSP                 ; Read PSP
         STM     R12,{R0-R2}             ; Store return values
@@ -138,9 +145,19 @@ __asm void SVC_Handler (void) {
         LDR     R3,=__cpp(&os_tsk)
         LDM     R3,{R1,R2}              ; os_tsk.run, os_tsk.new
         CMP     R1,R2
-        BEQ     SVC_Exit                ; no task switch
+#ifdef  IFX_XMC4XXX
+        PUSHEQ  {LR}
+        POPEQ   {PC}
+#else
+        BXEQ    LR                      ; RETI, no task switch
+#endif
 
         CBZ     R1,SVC_Next             ; Runtask deleted?
+        TST     LR,#0x10                ; is it extended frame?
+        VSTMDBEQ R12!,{S16-S31}         ; yes, stack also VFP hi-regs
+        MOVEQ   R0,#0x01                ; os_tsk->stack_frame val
+        MOVNE   R0,#0x00
+        STRB    R0,[R1,#TCB_STACKF]     ; os_tsk.run->stack_frame = val
         STMDB   R12!,{R4-R11}           ; Save Old context
         STR     R12,[R1,#TCB_TSTACK]    ; Update os_tsk.run->tsk_stack
 
@@ -153,11 +170,20 @@ SVC_Next
 
         LDR     R12,[R2,#TCB_TSTACK]    ; os_tsk.new->tsk_stack
         LDMIA   R12!,{R4-R11}           ; Restore New Context
+        LDRB    R0,[R2,#TCB_STACKF]     ; Stack Frame
+        CMP     R0,#0                   ; Basic/Extended Stack Frame
+        VLDMIANE R12!,{S16-S31}         ; restore VFP hi-registers
+        MVNNE   LR,#:NOT:0xFFFFFFED     ; set EXC_RETURN value
+        MVNEQ   LR,#:NOT:0xFFFFFFFD
         MSR     PSP,R12                 ; Write PSP
 
 SVC_Exit
-        MVN     LR,#:NOT:0xFFFFFFFD     ; set EXC_RETURN value
+#ifdef  IFX_XMC4XXX
+        PUSH    {LR}
+        POP     {PC}
+#else
         BX      LR
+#endif
 
         /*------------------- User SVC ------------------------------*/
 
@@ -188,15 +214,33 @@ SVC_Done
 __asm void PendSV_Handler (void) {
         PRESERVE8
 
+#ifdef  IFX_XMC4XXX
+        EXPORT  PendSV_Handler_Veneer
+PendSV_Handler_Veneer
+#endif
+
+        PUSH    {R4,LR}                 ; Save EXC_RETURN
         BL      __cpp(rt_pop_req)
 
 Sys_Switch
+        POP     {R4,LR}                 ; Restore EXC_RETURN
+
         LDR     R3,=__cpp(&os_tsk)
         LDM     R3,{R1,R2}              ; os_tsk.run, os_tsk.new
         CMP     R1,R2
-        BEQ     Sys_Exit
+#ifdef  IFX_XMC4XXX
+        PUSHEQ  {LR}
+        POPEQ   {PC}
+#else
+        BXEQ    LR                      ; RETI, no task switch
+#endif
 
         MRS     R12,PSP                 ; Read PSP
+        TST     LR,#0x10                ; is it extended frame?
+        VSTMDBEQ R12!,{S16-S31}         ; yes, stack also VFP hi-regs
+        MOVEQ   R0,#0x01                ; os_tsk->stack_frame val
+        MOVNE   R0,#0x00
+        STRB    R0,[R1,#TCB_STACKF]     ; os_tsk.run->stack_frame = val
         STMDB   R12!,{R4-R11}           ; Save Old context
         STR     R12,[R1,#TCB_TSTACK]    ; Update os_tsk.run->tsk_stack
 
@@ -208,11 +252,20 @@ Sys_Switch
 
         LDR     R12,[R2,#TCB_TSTACK]    ; os_tsk.new->tsk_stack
         LDMIA   R12!,{R4-R11}           ; Restore New Context
+        LDRB    R0,[R2,#TCB_STACKF]     ; Stack Frame
+        CMP     R0,#0                   ; Basic/Extended Stack Frame
+        VLDMIANE R12!,{S16-S31}         ; restore VFP hi-regs
+        MVNNE   LR,#:NOT:0xFFFFFFED     ; set EXC_RETURN value
+        MVNEQ   LR,#:NOT:0xFFFFFFFD
         MSR     PSP,R12                 ; Write PSP
 
 Sys_Exit
-        MVN     LR,#:NOT:0xFFFFFFFD     ; set EXC_RETURN value
+#ifdef  IFX_XMC4XXX
+        PUSH    {LR}
+        POP     {PC}
+#else
         BX      LR                      ; Return to Thread Mode
+#endif
 
         ALIGN
 }
@@ -223,6 +276,12 @@ Sys_Exit
 __asm void SysTick_Handler (void) {
         PRESERVE8
 
+#ifdef  IFX_XMC4XXX
+        EXPORT  SysTick_Handler_Veneer
+SysTick_Handler_Veneer
+#endif
+
+        PUSH    {R4,LR}                 ; Save EXC_RETURN
         BL      __cpp(rt_systick)
         B       Sys_Switch
 
@@ -235,6 +294,7 @@ __asm void SysTick_Handler (void) {
 __asm void OS_Tick_Handler (void) {
         PRESERVE8
 
+        PUSH    {R4,LR}                 ; Save EXC_RETURN
         BL      __cpp(os_tick_irqack)
         BL      __cpp(rt_systick)
         B       Sys_Switch

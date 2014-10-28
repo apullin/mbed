@@ -21,7 +21,7 @@ CORE_LABELS = {
     "Cortex-M0+": "M0P",
     "Cortex-M3" : "M3",
     "Cortex-M4" : "M4",
-    "Cortex-M4F" : "M4"
+    "Cortex-M4F" : "M4F"
 }
 
 import os
@@ -157,7 +157,6 @@ class K20D50M(Target):
     def __init__(self):
         Target.__init__(self)
         self.core = "Cortex-M4"
-        #self.core = "Cortex-M4F"
         self.extra_labels = ['Freescale']
         self.supported_toolchains = ["GCC_ARM", "ARM"]
         self.is_disk_virtual = True
